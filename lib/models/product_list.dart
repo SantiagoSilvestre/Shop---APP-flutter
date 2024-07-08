@@ -8,61 +8,74 @@ import 'package:shop/models/product.dart';
 import 'package:shop/utils/constants.dart';
 
 class ProductList with ChangeNotifier {
-  final List<Product> _items = [];
+  List<Product> itemsGlobal = [];
+  final String token;
+  final String userId;
 
-  List<Product> get items => [..._items];
-  List<Product> get favoreItems =>
-      _items.where((prod) => prod.isFavorite).toList();
+  ProductList({this.token = '', this.itemsGlobal = const [], this.userId = ''});
 
-  int get itemsCount => _items.length;
+  List<Product> get items => [...itemsGlobal];
+
+  int get itemsCount => itemsGlobal.length;
 
   Future<void> loadProducts() async {
-    _items.clear();
-    final response =
-        await http.get(Uri.parse("${Constants.PRODUCT_BASE_URL}.json"));
+    itemsGlobal.clear();
+    final response = await http
+        .get(Uri.parse("${Constants.PRODUCT_BASE_URL}.json?auth=$token"));
     if (response.body == 'null') return;
+
+    final favResponse = await http.get(
+      Uri.parse("${Constants.USER_FAVORITES_URL}/$userId.json?auth=$token"),
+    );
+
+    Map<String, dynamic> favData =
+        favResponse.body == 'null' ? {} : jsonDecode(favResponse.body);
+
     Map<String, dynamic> data = jsonDecode(response.body);
     data.forEach((productId, productData) {
-      _items.add(Product(
+      itemsGlobal.add(Product(
         id: productId,
         name: productData['name'],
         description: productData['description'],
         price: productData['price'],
         imageUrl: productData['imageUrl'],
-        isFavorite: productData['isFavorite'],
+        isFavorite: favData[productId] ?? false,
       ));
     });
     notifyListeners();
   }
 
+  List<Product> get favoreItems =>
+      itemsGlobal.where((prod) => prod.isFavorite).toList();
+
   Future<void> addProduct(Product product) async {
-    final response =
-        await http.post(Uri.parse("${Constants.PRODUCT_BASE_URL}.json"),
-            body: jsonEncode({
-              "name": product.name,
-              "price": product.price,
-              "description": product.description,
-              "imageUrl": product.imageUrl,
-              "isFavorite": product.isFavorite,
-            }));
+    final response = await http.post(
+        Uri.parse("${Constants.PRODUCT_BASE_URL}.json?auth=$token"),
+        body: jsonEncode({
+          "name": product.name,
+          "price": product.price,
+          "description": product.description,
+          "imageUrl": product.imageUrl,
+        }));
 
     final id = jsonDecode(response.body)['name'];
-    _items.add(Product(
+    itemsGlobal.add(Product(
       id: id,
       name: product.name,
       description: product.description,
       price: product.price,
       imageUrl: product.imageUrl,
-      isFavorite: product.isFavorite,
     ));
     notifyListeners();
   }
 
   Future<void> updateProduct(Product product) async {
-    final productIndex = _items.indexWhere((prod) => prod.id == product.id);
+    final productIndex =
+        itemsGlobal.indexWhere((prod) => prod.id == product.id);
     if (productIndex >= 0) {
       await http.patch(
-        Uri.parse("${Constants.PRODUCT_BASE_URL}/${product.id}.json"),
+        Uri.parse(
+            "${Constants.PRODUCT_BASE_URL}/${product.id}.json?auth=$token"),
         body: jsonEncode(
           {
             "name": product.name,
@@ -73,24 +86,26 @@ class ProductList with ChangeNotifier {
         ),
       );
 
-      _items[productIndex] = product;
+      itemsGlobal[productIndex] = product;
       notifyListeners();
     }
   }
 
   Future<void> removeProduct(Product product) async {
-    final productIndex = _items.indexWhere((prod) => prod.id == product.id);
+    final productIndex =
+        itemsGlobal.indexWhere((prod) => prod.id == product.id);
     if (productIndex >= 0) {
-      final product = _items[productIndex];
-      _items.remove(product);
+      final product = itemsGlobal[productIndex];
+      itemsGlobal.remove(product);
       notifyListeners();
 
       final response = await http.delete(
-        Uri.parse("${Constants.PRODUCT_BASE_URL}/${product.id}.json"),
+        Uri.parse(
+            "${Constants.PRODUCT_BASE_URL}/${product.id}.json?auth=$token"),
       );
 
       if (response.statusCode >= 400) {
-        _items.insert(productIndex, product);
+        itemsGlobal.insert(productIndex, product);
         notifyListeners();
         throw HttpException(
           msg: "Não foi possível excluir o produto",
